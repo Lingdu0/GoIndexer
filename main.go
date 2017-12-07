@@ -8,52 +8,51 @@ import (
 	"log"
 	"io/ioutil"
 	"strconv"
+	"net/url"
 )
 
 var rootDir = "."
 
 func main() {
+	fmt.Printf("It works on %v\r\n", getListenAddr())
 	http.HandleFunc("/", handler)
 	log.Fatal(http.ListenAndServe(getListenAddr(), nil))
 }
 
 func handler(rsp http.ResponseWriter, req *http.Request) {
-	file := rootDir + filepath.FromSlash(req.RequestURI)
+	fmt.Printf("%v %v\r\n", req.Method, req.URL)
+	uri, err := url.QueryUnescape(req.RequestURI)
+	if err != nil {
+		http.NotFound(rsp, req)
+	}
+	file := rootDir + filepath.FromSlash(uri)
 	fileInfo, err := os.Stat(file)
 	if err != nil {
 		if os.IsNotExist(err) || os.IsPermission(err) {
-			rsp.WriteHeader(404)
-			rsp.Write([]byte("<h1>File Not Found</h1>"))
+			http.NotFound(rsp, req)
 		} else {
-			rsp.WriteHeader(500)
-			rsp.Write([]byte("<h1>Server Error</h1>"))
+			http.Error(rsp, "internal error", 500)
 			fmt.Println(err.Error())
 		}
 		return
 	}
 	if !fileInfo.IsDir() {
-		download(rsp, file)
+		f, err := os.Open(file)
+		if err != nil {
+			http.NotFound(rsp, req)
+		}
+		http.ServeContent(rsp, req, file, fileInfo.ModTime(), f)
 		return
 	} else {
 		list(rsp, file)
+		return
 	}
-}
-
-func download(rsp http.ResponseWriter, filename string) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		rsp.WriteHeader(500)
-		rsp.Write([]byte("<h1>Server Error</h1>"))
-		return;
-	}
-	rsp.Write(data)
 }
 
 func list(rsp http.ResponseWriter, dirName string)  {
 	fileInfoList, err := ioutil.ReadDir(dirName)
 	if err != nil {
-		rsp.WriteHeader(500)
-		rsp.Write([]byte("<h1>Server Error</h1>"))
+		http.Error(rsp, "internal error", 500)
 		fmt.Println(err.Error())
 		return
 	}
